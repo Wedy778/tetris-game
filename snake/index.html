@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0,user-scalable=no">
+<title>贪吃蛇</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui}
+body{background:#1f664e;display:flex;flex-direction:column;align-items:center;padding:20px;position:relative}
+/*右上角返回首页房子按钮*/
+.home-icon{
+    position:absolute;
+    top:16px;
+    right:20px;
+    width:46px;height:46px;border-radius:50%;
+    background:linear-gradient(150deg,#69c9a9,#52bb95);
+    display:flex;align-items:center;justify-content:center;
+    text-decoration:none;font-size:24px;color:#165743;
+    box-shadow:0 3px 10px #20594860;
+}
+.ctrl-row{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;justify-content:center}
+.ctrl-row button,.ctrl-row select{
+    padding:10px 16px;font-size:16px;border:none;border-radius:10px;
+    background:linear-gradient(150deg,#69c9a9,#52bb95);color:#165743;cursor:pointer;
+}
+/*游戏操作说明*/
+.game-tip{
+    color:#e6f7f2;
+    font-size:14px;
+    opacity:0.8;
+    margin-bottom:16px;
+    text-align:center;
+    line-height:1.5;
+}
+.score-info{
+    color:#e6f7f2;
+    font-size:20px;
+    margin-bottom:16px;
+}
+#gameCanvas{
+    background:#277860;
+    padding:6px;
+    border-radius:12px;
+    box-shadow:0 0 25px #38997870;
+    touch-action: none;
+}
+/*虚拟方向按键（和俄罗斯方块同款）*/
+.dir-box{
+    margin-top:20px;
+    display:grid;
+    grid-template-columns: repeat(3,70px);
+    gap:8px;
+}
+.dir-btn{
+    width:70px;
+    height:70px;
+    border:none;
+    border-radius:10px;
+    background:linear-gradient(150deg,#b6e8d5,#72d0b2);
+    color:#165743;
+    font-size:22px;
+    cursor:pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.dir-btn:active{filter:brightness(0.9)}
+.dir-empty{visibility:hidden;}
+
+/*和主页统一的薄荷弹窗*/
+.modal-mask{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.45);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:999;
+    opacity:0;
+    transition:opacity 0.25s ease;
+}
+.modal-mask.show{
+    display:flex;
+    opacity:1;
+}
+@keyframes bounceIn{
+    0% {transform: scale(0.93); opacity:0;}
+    65% {transform: scale(1.06); opacity:1;}
+    100% {transform: scale(1);}
+}
+@keyframes bounceOut{
+    0% {transform: scale(1);opacity:1;}
+    100% {transform: scale(0.93);opacity:0;}
+}
+.modal-box{
+    background:linear-gradient(150deg,#e6f7f2,#b6e8d5);
+    color:#165743;
+    padding:32px 42px;
+    border-radius:14px;
+    box-shadow:0 5px 20px #20594877;
+    text-align:center;
+}
+.modal-mask.show .modal-box{
+    animation: bounceIn 0.32s ease forwards;
+}
+.modal-mask.hide .modal-box{
+    animation: bounceOut 0.18s ease forwards;
+}
+.modal-box h3{margin-bottom:16px;font-size:22px;}
+.modal-btn-group{display:flex;gap:14px;justify-content:center;margin-top:20px;}
+.modal-box button{
+    padding:8px 24px;
+    border:none;
+    border-radius:8px;
+    background:linear-gradient(150deg,#69c9a9,#52bb95);
+    color:#165743;
+    font-size:16px;
+    cursor:pointer;
+    transition:0.2s;
+}
+.modal-box button:hover{
+    filter:brightness(1.1);
+}
+</style>
+</head>
+<body>
+<a href="../" class="home-icon">🏠</a>
+
+<div class="ctrl-row">
+    <button id="restartBtn">重新开始</button>
+    <button id="pauseBtn">暂停</button>
+    <select id="difficultySel">
+        <option value="easy">初级 (慢速)</option>
+        <option value="medium" selected>中级 (中速)</option>
+        <option value="hard">高级 (快速)</option>
+    </select>
+</div>
+
+<!-- 游戏操作说明 -->
+<div class="game-tip">
+    电脑：方向键控制移动<br>
+    手机：点击下方方向按键控制
+</div>
+
+<div class="score-info">得分：<span id="score">0</span></div>
+
+<canvas id="gameCanvas" width="280" height="280"></canvas>
+
+<!-- 手机虚拟方向按键 -->
+<div class="dir-box">
+    <div class="dir-empty"></div>
+    <button class="dir-btn" data-dir="up">↑</button>
+    <div class="dir-empty"></div>
+    <button class="dir-btn" data-dir="left">←</button>
+    <button class="dir-btn" data-dir="down">↓</button>
+    <button class="dir-btn" data-dir="right">→</button>
+</div>
+
+<div class="modal-mask" id="modal">
+    <div class="modal-box">
+        <h3 id="modalTitle">游戏结束</h3>
+        <p id="modalText">最终得分：0</p>
+        <div class="modal-btn-group">
+            <button id="modalRestart">重新开始</button>
+            <button id="modalHome">返回主页</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreText = document.getElementById('score');
+const restartBtn = document.getElementById('restartBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const difficultySel = document.getElementById('difficultySel');
+const modal = document.getElementById('modal');
+const modalTitle = document.getElementById('modalTitle');
+const modalText = document.getElementById('modalText');
+const modalRestart = document.getElementById('modalRestart');
+const modalHome = document.getElementById('modalHome');
+const dirBtns = document.querySelectorAll('.dir-btn');
+
+const cellSize = 20;
+const gridSize = 14; // 14×14网格
+
+//难度配置（移动间隔毫秒，整体调慢，梯度更合理）
+const difficulty = {
+    easy: 280,   // 非常慢，适合新手
+    medium: 220, // 适中速度，大部分人能轻松上手
+    hard: 160    // 有挑战性但不虐心
+};
+let currentSpeed = difficulty.medium;
+let snake = [];
+let food = {};
+let direction = 'right';
+let nextDirection = 'right';
+let score = 0;
+let gameTimer = null;
+let gameOver = false;
+let isPause = false; // 暂停状态变量
+
+//薄荷色配色
+const colors = {
+    grid: '#3ea98b',
+    snakeHead: '#389978',
+    snakeBody: '#69c9a9',
+    food: '#e6f7f2'
+};
+
+//弹窗控制
+function showModal(title,text){
+    modalTitle.innerText = title;
+    modalText.innerText = text;
+    modal.classList.remove('hide');
+    modal.classList.add('show');
+}
+function hideModal(){
+    modal.classList.remove('show');
+    modal.classList.add('hide');
+    setTimeout(()=>modal.classList.remove('hide'),180)
+}
+modalRestart.onclick = ()=>{
+    hideModal();
+    initGame();
+}
+modalHome.onclick = ()=>{
+    location.href = "../";
+}
+
+//初始化游戏
+function initGame(){
+    clearInterval(gameTimer);
+    gameOver = false;
+    isPause = false; // 重置暂停状态
+    score = 0;
+    direction = 'right';
+    nextDirection = 'right';
+    scoreText.innerText = score;
+    pauseBtn.innerText = "暂停"; // 重置按钮文字
+    
+    //初始化蛇（3节）
+    snake = [
+        {x:6, y:7},
+        {x:5, y:7},
+        {x:4, y:7}
+    ];
+    
+    //生成食物
+    generateFood();
+    
+    //开始游戏循环
+    gameTimer = setInterval(gameLoop, currentSpeed);
+}
+
+//生成食物（不在蛇身上）
+function generateFood(){
+    let valid = false;
+    while(!valid){
+        food.x = Math.floor(Math.random()*gridSize);
+        food.y = Math.floor(Math.random()*gridSize);
+        valid = !snake.some(seg => seg.x === food.x && seg.y === food.y);
+    }
+}
+
+//游戏主循环
+function gameLoop(){
+    if(gameOver || isPause) return; // 暂停时不执行移动逻辑
+    
+    //更新方向
+    direction = nextDirection;
+    
+    //计算新头部
+    let head = {...snake[0]};
+    switch(direction){
+        case 'up': head.y--; break;
+        case 'down': head.y++; break;
+        case 'left': head.x--; break;
+        case 'right': head.x++; break;
+    }
+    
+    //碰撞检测
+    if(head.x < 0 || head.x >= gridSize || head.y < 0 || head.y >= gridSize){
+        endGame();
+        return;
+    }
+    if(snake.some(seg => seg.x === head.x && seg.y === head.y)){
+        endGame();
+        return;
+    }
+    
+    //添加新头部
+    snake.unshift(head);
+    
+    //吃食物
+    if(head.x === food.x && head.y === food.y){
+        score += 10;
+        scoreText.innerText = score;
+        generateFood();
+    }else{
+        //移除尾部
+        snake.pop();
+    }
+    
+    //绘制
+    draw();
+}
+
+//绘制游戏
+function draw(){
+    //清空画布
+    ctx.fillStyle = '#277860';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    //绘制网格
+    ctx.strokeStyle = colors.grid;
+    ctx.lineWidth = 1;
+    for(let i=0;i<=gridSize;i++){
+        ctx.beginPath();
+        ctx.moveTo(i*cellSize, 0);
+        ctx.lineTo(i*cellSize, canvas.height);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, i*cellSize);
+        ctx.lineTo(canvas.width, i*cellSize);
+        ctx.stroke();
+    }
+    
+    //绘制蛇
+    snake.forEach((seg, index)=>{
+        ctx.fillStyle = index === 0 ? colors.snakeHead : colors.snakeBody;
+        ctx.fillRect(seg.x*cellSize+1, seg.y*cellSize+1, cellSize-2, cellSize-2);
+    });
+    
+    //绘制食物
+    ctx.fillStyle = colors.food;
+    ctx.fillRect(food.x*cellSize+2, food.y*cellSize+2, cellSize-4, cellSize-4);
+}
+
+//游戏结束
+function endGame(){
+    gameOver = true;
+    clearInterval(gameTimer);
+    showModal("游戏结束", "最终得分：" + score);
+}
+
+//方向控制
+function changeDirection(newDir){
+    //暂停或游戏结束时不能改变方向
+    if(gameOver || isPause) return;
+    //禁止180度转向
+    const opposites = {up:'down', down:'up', left:'right', right:'left'};
+    if(opposites[newDir] !== direction){
+        nextDirection = newDir;
+    }
+}
+
+//暂停功能
+pauseBtn.onclick = ()=>{
+    if(gameOver) return; // 游戏结束时暂停键无效
+    isPause = !isPause;
+    pauseBtn.innerText = isPause ? "继续" : "暂停";
+}
+
+//键盘控制
+document.addEventListener('keydown', e=>{
+    if(gameOver) return;
+    switch(e.key){
+        case 'ArrowUp': changeDirection('up'); break;
+        case 'ArrowDown': changeDirection('down'); break;
+        case 'ArrowLeft': changeDirection('left'); break;
+        case 'ArrowRight': changeDirection('right'); break;
+        case ' ': // 空格键也可以暂停/继续
+            pauseBtn.click();
+            break;
+    }
+});
+
+//手机虚拟按键控制
+dirBtns.forEach(btn=>{
+    btn.addEventListener('touchstart', e=>{
+        e.preventDefault();
+        if(gameOver) return;
+        changeDirection(btn.dataset.dir);
+    }, {passive: false});
+});
+
+//难度切换
+difficultySel.onchange = ()=>{
+    currentSpeed = difficulty[difficultySel.value];
+    initGame();
+}
+
+restartBtn.onclick = initGame;
+initGame();
+</script>
+</body>
+</html>
