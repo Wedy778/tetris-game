@@ -1,1 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0,user-scalable=no">
+<title>俄罗斯方块</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui}
+body{background:#1f664e;display:flex;flex-direction:column;align-items:center;padding:20px;position:relative}
+/*右上角返回首页房子按钮*/
+.home-icon{
+    position:absolute;
+    top:16px;
+    right:20px;
+    width:46px;height:46px;border-radius:50%;
+    background:linear-gradient(150deg,#69c9a9,#52bb95);
+    display:flex;align-items:center;justify-content:center;
+    text-decoration:none;font-size:24px;color:#165743;
+    box-shadow:0 3px 10px #20594860;
+}
+#box{display:flex;gap:24px;align-items:flex-start;margin-bottom:15px}
+#gameCanvas{border:2px solid #389978;background:#277860;border-radius:12px}
+#nextCanvas{border:1px solid #389978;background:#277860;border-radius:10px}
+#panel{}
+.info{margin:12px 0;font-size:22px;color:#e6f7f2}
+.tip{margin-top:12px;font-size:14px;opacity:0.8;color:#e6f7f2}
+.ctrl-row{display:flex;gap:8px;margin:12px 0;flex-wrap:wrap}
+.ctrl-row button{
+    padding:10px 16px;font-size:16px;border:none;border-radius:10px;
+    background:linear-gradient(150deg,#69c9a9,#52bb95);color:#165743;cursor:pointer;
+}
+/*虚拟按键*/
+#touchBtnBox{margin-top:15px;display:grid;grid-template-columns:80px 80px 80px;gap:10px}
+.touchBtn{
+    width:80px;height:60px;font-size:22px;border:none;border-radius:10px;cursor:pointer;
+    background:linear-gradient(150deg,#b6e8d5,#72d0b2);color:#165743;
+}
+.touchBtn:active{filter:brightness(0.9)}
+#btnLeft{grid-column:1}
+#btnDown{grid-column:2}
+#btnRight{grid-column:3}
+#btnRotate{grid-column:2;grid-row:2}
+
+.modal-mask{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.45);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:999;
+    opacity:0;
+    transition:opacity 0.25s ease;
+}
+.modal-mask.show{
+    display:flex;
+    opacity:1;
+}
+@keyframes bounceIn{
+    0% {transform: scale(0.93); opacity:0;}
+    65% {transform: scale(1.06); opacity:1;}
+    100% {transform: scale(1);}
+}
+@keyframes bounceOut{
+    0% {transform: scale(1);opacity:1;}
+    100% {transform: scale(0.93);opacity:0;}
+}
+.modal-box{
+    background:linear-gradient(150deg,#e6f7f2,#b6e8d5);
+    color:#165743;
+    padding:32px 42px;
+    border-radius:14px;
+    box-shadow:0 5px 20px #20594877;
+    text-align:center;
+}
+.modal-mask.show .modal-box{
+    animation: bounceIn 0.32s ease forwards;
+}
+.modal-mask.hide .modal-box{
+    animation: bounceOut 0.18s ease forwards;
+}
+.modal-box p{font-size:22px;margin-bottom:24px;}
+.modal-btn-group{display:flex;gap:14px;justify-content:center;}
+.modal-box button{
+    padding:8px 24px;
+    border:none;
+    border-radius:8px;
+    background:linear-gradient(150deg,#69c9a9,#52bb95);
+    color:#165743;
+    font-size:16px;
+    cursor:pointer;
+    transition:0.2s;
+}
+.modal-box button:hover{
+    filter:brightness(1.1);
+}
+</style>
+</head>
+<body>
+<a href="../" class="home-icon">🏠</a>
+
+<div class="ctrl-row">
+    <button id="restartBtn">重新开始</button>
+    <button id="pauseBtn">暂停</button>
+</div>
+
+<div id="box">
+    <canvas id="gameCanvas" width="240" height="480"></canvas>
+    <div id="panel">
+        <div class="info">得分：<span id="score">0</span></div>
+        <div class="info">下一个</div>
+        <canvas id="nextCanvas" width="120" height="120"></canvas>
+        <div class="tip">←→左右｜↑旋转｜↓下落</div>
+    </div>
+</div>
+
+<div id="touchBtnBox">
+    <button class="touchBtn" id="btnLeft">←</button>
+    <button class="touchBtn" id="btnDown">↓</button>
+    <button class="touchBtn" id="btnRight">→</button>
+    <button class="touchBtn" id="btnRotate">旋转</button>
+</div>
+
+<div class="modal-mask" id="modal">
+    <div class="modal-box">
+        <p id="scoreText">本局得分：0</p>
+        <div class="modal-btn-group">
+            <button id="modalRestart">重新开始</button>
+            <button id="modalHome">返回主页</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const game = document.getElementById('gameCanvas').getContext('2d');
+const nextCtx = document.getElementById('nextCanvas').getContext('2d');
+const scoreText = document.getElementById('score');
+const restartBtn = document.getElementById('restartBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const btnLeft = document.getElementById('btnLeft');
+const btnRight = document.getElementById('btnRight');
+const btnDown = document.getElementById('btnDown');
+const btnRotate = document.getElementById('btnRotate');
+const modal = document.getElementById('modal');
+const modalScore = document.getElementById('scoreText');
+const modalRestart = document.getElementById('modalRestart');
+const modalHome = document.getElementById('modalHome');
+
+const cell = 30;
+const cols = 8;
+const rows = 16;
+
+//固定20阶薄荷色
+const mintColor = [
+    "#277860", //0棋盘底色
+    "#f7fcfb","#f2faf7","#ecf8f3","#e6f7f2",
+    "#dcf4eb","#d1f0e4","#c9efe0","#b6e8d5",
+    "#ace4d1","#a2dfc8","#96e2cc","#8cd9c0",
+    "#80d5b8","#78d3b4","#72d0b2","#69c9a9",
+    "#5ebf9f","#52bb95","#48aa86","#389978"
+];
+const gridLine = "#3ea98b";
+//7种方块固定对应色
+const blockColorIndex = [3,7,11,15,18,5,13];
+
+const shapes = [
+    [[0,0],[1,0],[0,1],[1,1]],
+    [[0,1],[1,1],[2,1],[3,1]],
+    [[1,0],[0,1],[1,1],[2,1]],
+    [[0,0],[0,1],[1,1],[2,1]],
+    [[2,0],[0,1],[1,1],[2,1]],
+    [[1,0],[2,0],[0,1],[1,1]],
+    [[0,0],[1,0],[1,1],[2,1]]
+];
+let map, score, dropTimer, gameOver, isPause;
+let now = {};
+let nextIdx;
+let nextColorIdx;
+
+//弹窗控制
+function showModal(s){
+    modalScore.innerText = "本局得分：" + s;
+    modal.classList.remove('hide');
+    modal.classList.add('show');
+}
+function hideModal(){
+    modal.classList.remove('show');
+    modal.classList.add('hide');
+    setTimeout(()=>modal.classList.remove('hide'),180)
+}
+//弹窗按钮
+modalRestart.onclick = ()=>{
+    hideModal();
+    initGame();
+}
+modalHome.onclick = ()=>{
+    location.href = "../";
+}
+
+function initGame(){
+    if(dropTimer) clearInterval(dropTimer);
+    map = Array(rows).fill().map(()=>Array(cols).fill(0));
+    score = 0;
+    gameOver = false;
+    isPause = false;
+    scoreText.innerText = score;
+    now = {shapeIdx: Math.floor(Math.random()*7),x:3,y:0};
+    nextIdx = Math.floor(Math.random()*7);
+    nextColorIdx = blockColorIndex[nextIdx];
+    renderNext();
+    renderGame();
+    dropTimer = setInterval(dropOnce,750);
+    pauseBtn.innerText="暂停";
+}
+
+function isHit(sIndex, px, py){
+    const s = shapes[sIndex];
+    for(let [dx,dy] of s){
+        let x = px + dx;
+        let y = py + dy;
+        if(x<0 || x>=cols) return true;
+        if(y>=rows) return true;
+        if(y>=0 && map[y][x]>0) return true;
+    }
+    return false;
+}
+
+function renderGame(){
+    game.fillStyle=mintColor[0];
+    game.fillRect(0,0,240,480);
+    for(let y=0;y<rows;y++){
+        for(let x=0;x<cols;x++){
+            game.strokeStyle=gridLine;
+            game.lineWidth=1;
+            game.strokeRect(x*cell,y*cell,cell,cell);
+            let c = map[y][x];
+            if(c>0){
+                game.fillStyle=mintColor[c];
+                game.fillRect(x*cell+1,y*cell+1,cell-2,cell-2);
+            }
+        }
+    }
+    if(gameOver||isPause) return;
+    const s=shapes[now.shapeIdx];
+    const colorId = blockColorIndex[now.shapeIdx];
+    game.fillStyle=mintColor[colorId];
+    for(let [dx,dy] of s){
+        let x = now.x+dx;
+        let y = now.y+dy;
+        game.fillRect(x*cell+1,y*cell+1,cell-2,cell-2);
+    }
+}
+
+function renderNext(){
+    nextCtx.fillStyle=mintColor[0];
+    nextCtx.fillRect(0,0,120,120);
+    for(let yy=0;yy<4;yy++){
+        for(let xx=0;xx<4;xx++){
+            nextCtx.strokeStyle=gridLine;
+            nextCtx.lineWidth=1;
+            nextCtx.strokeRect(xx*30,yy*30,30,30);
+        }
+    }
+    const s=shapes[nextIdx];
+    nextCtx.fillStyle=mintColor[nextColorIdx];
+    let offX=1,offY=1;
+    for(let [dx,dy] of s){
+        nextCtx.fillRect((offX+dx)*30+1,(offY+dy)*30+1,28,28);
+    }
+}
+
+function lockBlock(){
+    const s=shapes[now.shapeIdx];
+    const cid = blockColorIndex[now.shapeIdx];
+    for(let [dx,dy] of s){
+        let x=now.x+dx;
+        let y=now.y+dy;
+        if(y>=0) map[y][x]=cid;
+    }
+    clearLine();
+    now={shapeIdx:nextIdx,x:3,y:0};
+    nextIdx = Math.floor(Math.random()*7);
+    nextColorIdx = blockColorIndex[nextIdx];
+    renderNext();
+    if(isHit(now.shapeIdx,now.x,now.y)){
+        gameOver = true;
+        clearInterval(dropTimer);
+        showModal(score);
+    }
+}
+
+function clearLine(){
+    let clearNum=0;
+    for(let y=rows-1;y>=0;y--){
+        if(map[y].every(v=>v>0)){
+            map.splice(y,1);
+            map.unshift(Array(cols).fill(0));
+            clearNum++;
+            y++;
+        }
+    }
+    if(clearNum>0){
+        score += clearNum*100;
+        scoreText.innerText=score;
+    }
+}
+
+function dropOnce(){
+    if(gameOver||isPause) return;
+    if(!isHit(now.shapeIdx,now.x,now.y+1)) now.y +=1;
+    else lockBlock();
+    renderGame();
+}
+
+function rotate(){
+    if(gameOver||isPause) return;
+    const old = JSON.parse(JSON.stringify(shapes[now.shapeIdx]));
+    let newP = old.map(([x,y])=>[-y,x]);
+    shapes[now.shapeIdx]=newP;
+    if(isHit(now.shapeIdx,now.x,now.y)){
+        shapes[now.shapeIdx]=old;
+        if(!isHit(now.shapeIdx,now.x-1,now.y)) now.x--;
+        else if(!isHit(now.shapeIdx,now.x+1,now.y)) now.x++;
+    }
+    renderGame();
+}
+
+document.addEventListener("keydown",e=>{
+    if(gameOver||isPause) return;
+    switch(e.key){
+        case "ArrowLeft":if(!isHit(now.shapeIdx,now.x-1,now.y)) now.x--;break;
+        case "ArrowRight":if(!isHit(now.shapeIdx,now.x+1,now.y)) now.x++;break;
+        case "ArrowDown":dropOnce();break;
+        case "ArrowUp":rotate();break;
+    }
+    renderGame();
+})
+
+btnLeft.onclick = ()=>{
+    if(gameOver||isPause)return;
+    if(!isHit(now.shapeIdx,now.x-1,now.y)) now.x--;renderGame();
+}
+btnRight.onclick = ()=>{
+    if(gameOver||isPause)return;
+    if(!isHit(now.shapeIdx,now.x+1,now.y)) now.x++;renderGame();
+}
+btnDown.onclick = ()=>{if(gameOver||isPause)return;dropOnce();}
+btnRotate.onclick = ()=>{if(gameOver||isPause)return;rotate();}
+
+pauseBtn.onclick=()=>{
+    isPause=!isPause;
+    if(isPause){
+        clearInterval(dropTimer);
+        pauseBtn.innerText="继续";
+    }else{
+        dropTimer=setInterval(dropOnce,750);
+        pauseBtn.innerText="暂停";
+    }
+    renderGame();
+}
+restartBtn.onclick = initGame;
+initGame();
+</script>
+</body>
+</html>
 
