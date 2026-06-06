@@ -23,7 +23,7 @@ body{background:#1f664e;display:flex;flex-direction:column;align-items:center;pa
 #nextCanvas{border:1px solid #389978;background:#277860;border-radius:10px}
 #panel{}
 .info{margin:12px 0;font-size:22px;color:#e6f7f2}
-.tip{margin-top:12px;font-size:14px;opacity:0.8;color:#e6f7f2}
+.tip{margin-top:16px;font-size:14px;opacity:0.8;color:#e6f7f2}
 .ctrl-row{display:flex;gap:8px;margin:12px 0;flex-wrap:wrap}
 .ctrl-row button{
     padding:10px 16px;font-size:16px;border:none;border-radius:10px;
@@ -109,7 +109,7 @@ body{background:#1f664e;display:flex;flex-direction:column;align-items:center;pa
     <div id="panel">
         <div class="info">得分：<span id="score">0</span></div>
         <div class="info">下一个</div>
-        <canvas id="nextCanvas" width="120" height="120"></canvas>
+        <canvas id="nextCanvas" width="150" height="150"></canvas>
         <div class="tip">←→左右｜↑旋转｜↓下落</div>
     </div>
 </div>
@@ -247,15 +247,18 @@ function renderGame(){
     for(let [dx,dy] of s){
         let x = now.x+dx;
         let y = now.y+dy;
-        game.fillRect(x*cell+1,y*cell+1,cell-2,cell-2);
+        if(y>=0) { // 只绘制在屏幕内的部分
+            game.fillRect(x*cell+1,y*cell+1,cell-2,cell-2);
+        }
     }
 }
 
 function renderNext(){
     nextCtx.fillStyle=mintColor[0];
-    nextCtx.fillRect(0,0,120,120);
-    for(let yy=0;yy<4;yy++){
-        for(let xx=0;xx<4;xx++){
+    nextCtx.fillRect(0,0,150,150);
+    // 绘制5x5的网格
+    for(let yy=0;yy<5;yy++){
+        for(let xx=0;xx<5;xx++){
             nextCtx.strokeStyle=gridLine;
             nextCtx.lineWidth=1;
             nextCtx.strokeRect(xx*30,yy*30,30,30);
@@ -263,7 +266,20 @@ function renderNext(){
     }
     const s=shapes[nextIdx];
     nextCtx.fillStyle=mintColor[nextColorIdx];
-    let offX=1,offY=1;
+    
+    // 计算方块在5x5预览区域的居中偏移量
+    let minX=4, maxX=0, minY=4, maxY=0;
+    for(let [dx,dy] of s){
+        minX = Math.min(minX, dx);
+        maxX = Math.max(maxX, dx);
+        minY = Math.min(minY, dy);
+        maxY = Math.max(maxY, dy);
+    }
+    const blockWidth = maxX - minX + 1;
+    const blockHeight = maxY - minY + 1;
+    const offX = Math.floor((5 - blockWidth) / 2) - minX;
+    const offY = Math.floor((5 - blockHeight) / 2) - minY;
+    
     for(let [dx,dy] of s){
         nextCtx.fillRect((offX+dx)*30+1,(offY+dy)*30+1,28,28);
     }
@@ -272,16 +288,40 @@ function renderNext(){
 function lockBlock(){
     const s=shapes[now.shapeIdx];
     const cid = blockColorIndex[now.shapeIdx];
+    
+    // 优化失败判定：如果锁定时方块有任何部分在游戏区域上方，直接游戏结束
+    let hasBlockAboveScreen = false;
+    for(let [dx,dy] of s){
+        let y=now.y+dy;
+        if(y<0) {
+            hasBlockAboveScreen = true;
+            break;
+        }
+    }
+    
+    if(hasBlockAboveScreen) {
+        gameOver = true;
+        clearInterval(dropTimer);
+        showModal(score);
+        return;
+    }
+    
+    // 锁定方块到地图
     for(let [dx,dy] of s){
         let x=now.x+dx;
         let y=now.y+dy;
-        if(y>=0) map[y][x]=cid;
+        map[y][x]=cid;
     }
+    
     clearLine();
+    
+    // 生成新方块
     now={shapeIdx:nextIdx,x:3,y:0};
     nextIdx = Math.floor(Math.random()*7);
     nextColorIdx = blockColorIndex[nextIdx];
     renderNext();
+    
+    // 检查新方块是否能正常生成
     if(isHit(now.shapeIdx,now.x,now.y)){
         gameOver = true;
         clearInterval(dropTimer);
@@ -363,4 +403,3 @@ initGame();
 </script>
 </body>
 </html>
-
