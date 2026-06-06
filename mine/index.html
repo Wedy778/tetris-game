@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0,user-scalable=no">
+<title>扫雷</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui}
+body{background:#1f664e;display:flex;flex-direction:column;align-items:center;padding:20px;position:relative}
+/*右上角返回首页房子按钮*/
+.home-icon{
+    position:absolute;
+    top:16px;
+    right:20px;
+    width:46px;height:46px;border-radius:50%;
+    background:linear-gradient(150deg,#69c9a9,#52bb95);
+    display:flex;align-items:center;justify-content:center;
+    text-decoration:none;font-size:24px;color:#165743;
+    box-shadow:0 3px 10px #20594860;
+}
+.ctrl-row{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;justify-content:center}
+.ctrl-row button,.ctrl-row select{
+    padding:10px 16px;font-size:16px;border:none;border-radius:10px;
+    background:linear-gradient(150deg,#69c9a9,#52bb95);color:#165743;cursor:pointer;
+}
+/*游戏操作说明*/
+.game-tip{
+    color:#e6f7f2;
+    font-size:14px;
+    opacity:0.8;
+    margin-bottom:16px;
+    text-align:center;
+    line-height:1.5;
+}
+#gameBoard{
+    display:grid;
+    gap:2px;
+    background:#277860;
+    padding:6px;
+    border-radius:12px;
+    box-shadow:0 0 25px #38997870;
+    touch-action: none; /* 禁用浏览器默认触摸行为 */
+}
+.cell{
+    width:28px;height:28px;
+    background:linear-gradient(150deg,#b6e8d5,#96e2cc);
+    border-radius:4px;
+    display:flex;align-items:center;justify-content:center;
+    font-weight:bold;color:#165743;cursor:pointer;
+    user-select:none;
+    -webkit-tap-highlight-color: transparent; /* 移除手机点击高亮 */
+}
+.cell.opened{background:#3ea98b;}
+.cell.mine{background:#f44;}
+.cell.flag{background:#ffcc00;}
+/*数字颜色（薄荷色系深浅区分）*/
+.cell.num1{color:#e6f7f2;}
+.cell.num2{color:#b6e8d5;}
+.cell.num3{color:#96e2cc;}
+.cell.num4{color:#72d0b2;}
+.cell.num5{color:#69c9a9;}
+.cell.num6{color:#52bb95;}
+.cell.num7{color:#48aa86;}
+.cell.num8{color:#389978;}
+
+/*和主页统一的薄荷弹窗*/
+.modal-mask{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.45);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:999;
+    opacity:0;
+    transition:opacity 0.25s ease;
+}
+.modal-mask.show{
+    display:flex;
+    opacity:1;
+}
+@keyframes bounceIn{
+    0% {transform: scale(0.93); opacity:0;}
+    65% {transform: scale(1.06); opacity:1;}
+    100% {transform: scale(1);}
+}
+@keyframes bounceOut{
+    0% {transform: scale(1);opacity:1;}
+    100% {transform: scale(0.93);opacity:0;}
+}
+.modal-box{
+    background:linear-gradient(150deg,#e6f7f2,#b6e8d5);
+    color:#165743;
+    padding:32px 42px;
+    border-radius:14px;
+    box-shadow:0 5px 20px #20594877;
+    text-align:center;
+}
+.modal-mask.show .modal-box{
+    animation: bounceIn 0.32s ease forwards;
+}
+.modal-mask.hide .modal-box{
+    animation: bounceOut 0.18s ease forwards;
+}
+.modal-box h3{margin-bottom:16px;font-size:22px;}
+.modal-btn-group{display:flex;gap:14px;justify-content:center;margin-top:20px;}
+.modal-box button{
+    padding:8px 24px;
+    border:none;
+    border-radius:8px;
+    background:linear-gradient(150deg,#69c9a9,#52bb95);
+    color:#165743;
+    font-size:16px;
+    cursor:pointer;
+    transition:0.2s;
+}
+.modal-box button:hover{
+    filter:brightness(1.1);
+}
+</style>
+</head>
+<body>
+<a href="../" class="home-icon">🏠</a>
+
+<div class="ctrl-row">
+    <button id="restartBtn">重新开始</button>
+    <select id="difficultySel">
+        <option value="easy">初级 (9×9 10雷)</option>
+        <option value="medium" selected>中级 (16×16 40雷)</option>
+        <option value="hard">高级 (20×20 60雷)</option>
+    </select>
+</div>
+
+<!-- 新增游戏操作说明 -->
+<div class="game-tip">
+    电脑：左键点开 | 右键插旗<br>
+    手机：点击点开 | 长按0.5秒插旗
+</div>
+
+<div id="gameBoard"></div>
+
+<div class="modal-mask" id="modal">
+    <div class="modal-box">
+        <h3 id="modalTitle">游戏结束</h3>
+        <p id="modalText"></p>
+        <div class="modal-btn-group">
+            <button id="modalRestart">重新开始</button>
+            <button id="modalHome">返回主页</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const gameBoard = document.getElementById('gameBoard');
+const restartBtn = document.getElementById('restartBtn');
+const difficultySel = document.getElementById('difficultySel');
+const modal = document.getElementById('modal');
+const modalTitle = document.getElementById('modalTitle');
+const modalText = document.getElementById('modalText');
+const modalRestart = document.getElementById('modalRestart');
+const modalHome = document.getElementById('modalHome');
+
+//难度配置
+const difficulty = {
+    easy: {row:9, col:9, mine:10},
+    medium: {row:16, col:16, mine:40},
+    hard: {row:20, col:20, mine:60}
+};
+let currentDiff = difficulty.medium;
+let board = [];
+let mineCount = 0;
+let openedCount = 0;
+let gameOver = false;
+let touchStartTime = 0;
+let touchCell = null;
+
+//弹窗控制
+function showModal(title,text){
+    modalTitle.innerText = title;
+    modalText.innerText = text;
+    modal.classList.remove('hide');
+    modal.classList.add('show');
+}
+function hideModal(){
+    modal.classList.remove('show');
+    modal.classList.add('hide');
+    setTimeout(()=>modal.classList.remove('hide'),180)
+}
+modalRestart.onclick = ()=>{
+    hideModal();
+    initGame();
+}
+modalHome.onclick = ()=>{
+    location.href = "../";
+}
+
+//初始化游戏
+function initGame(){
+    gameOver = false;
+    openedCount = 0;
+    mineCount = currentDiff.mine;
+    board = Array(currentDiff.row).fill().map(()=>Array(currentDiff.col).fill(0));
+    gameBoard.innerHTML = '';
+    gameBoard.style.gridTemplateColumns = `repeat(${currentDiff.col}, 28px)`;
+    
+    //随机生成地雷
+    let placed = 0;
+    while(placed < currentDiff.mine){
+        let r = Math.floor(Math.random()*currentDiff.row);
+        let c = Math.floor(Math.random()*currentDiff.col);
+        if(board[r][c] !== -1){
+            board[r][c] = -1;
+            placed++;
+        }
+    }
+    
+    //计算周围地雷数
+    for(let r=0;r<currentDiff.row;r++){
+        for(let c=0;c<currentDiff.col;c++){
+            if(board[r][c] === -1) continue;
+            let count = 0;
+            for(let dr=-1;dr<=1;dr++){
+                for(let dc=-1;dc<=1;dc++){
+                    let nr=r+dr, nc=c+dc;
+                    if(nr>=0&&nr<currentDiff.row&&nc>=0&&nc<currentDiff.col&&board[nr][nc]===-1) count++;
+                }
+            }
+            board[r][c] = count;
+        }
+    }
+    
+    //生成格子DOM
+    for(let r=0;r<currentDiff.row;r++){
+        for(let c=0;c<currentDiff.col;c++){
+            const cell = document.createElement('div');
+            cell.className = 'cell';
+            cell.dataset.r = r;
+            cell.dataset.c = c;
+            
+            //电脑端事件
+            cell.onclick = (e)=>{
+                if(gameOver || cell.classList.contains('flag') || cell.classList.contains('opened')) return;
+                openCell(r,c);
+                checkWin();
+            }
+            
+            cell.oncontextmenu = (e)=>{
+                e.preventDefault();
+                if(gameOver || cell.classList.contains('opened')) return;
+                toggleFlag(cell);
+            }
+            
+            //手机端统一触摸事件处理（解决点击无反应问题）
+            cell.addEventListener('touchstart', (e)=>{
+                e.preventDefault();
+                touchStartTime = Date.now();
+                touchCell = cell;
+            }, {passive: false});
+            
+            cell.addEventListener('touchend', (e)=>{
+                e.preventDefault();
+                if(!touchCell || gameOver) return;
+                const touchDuration = Date.now() - touchStartTime;
+                
+                if(touchDuration < 300){
+                    //短按：点开格子
+                    if(!touchCell.classList.contains('flag') && !touchCell.classList.contains('opened')){
+                        openCell(parseInt(touchCell.dataset.r), parseInt(touchCell.dataset.c));
+                        checkWin();
+                    }
+                }else{
+                    //长按：插旗/拔旗
+                    if(!touchCell.classList.contains('opened')){
+                        toggleFlag(touchCell);
+                    }
+                }
+                touchCell = null;
+            }, {passive: false});
+            
+            cell.addEventListener('touchcancel', ()=>{
+                touchCell = null;
+            });
+            
+            gameBoard.appendChild(cell);
+        }
+    }
+}
+
+//切换旗帜状态
+function toggleFlag(cell){
+    cell.classList.toggle('flag');
+    cell.innerText = cell.classList.contains('flag') ? '🚩' : '';
+}
+
+//打开格子
+function openCell(r,c){
+    const cell = document.querySelector(`[data-r="${r}"][data-c="${c}"]`);
+    if(!cell || cell.classList.contains('opened') || cell.classList.contains('flag')) return;
+    
+    cell.classList.add('opened');
+    openedCount++;
+    
+    if(board[r][c] === -1){
+        //踩雷游戏结束
+        cell.classList.add('mine');
+        cell.innerText = '💣';
+        gameOver = true;
+        //显示所有地雷
+        for(let i=0;i<currentDiff.row;i++){
+            for(let j=0;j<currentDiff.col;j++){
+                if(board[i][j] === -1){
+                    const mCell = document.querySelector(`[data-r="${i}"][data-c="${j}"]`);
+                    mCell.classList.add('mine');
+                    mCell.innerText = '💣';
+                }
+            }
+        }
+        showModal("游戏失败","你踩到地雷了！");
+        return;
+    }
+    
+    if(board[r][c] > 0){
+        cell.innerText = board[r][c];
+        cell.classList.add(`num${board[r][c]}`);
+    }else{
+        //空白格子自动展开周围
+        for(let dr=-1;dr<=1;dr++){
+            for(let dc=-1;dc<=1;dc++){
+                let nr=r+dr, nc=c+dc;
+                if(nr>=0&&nr<currentDiff.row&&nc>=0&&nc<currentDiff.col){
+                    openCell(nr,nc);
+                }
+            }
+        }
+    }
+}
+
+//检查胜利
+function checkWin(){
+    const totalCells = currentDiff.row * currentDiff.col;
+    if(openedCount === totalCells - currentDiff.mine){
+        gameOver = true;
+        showModal("恭喜胜利！","你成功找出了所有地雷");
+    }
+}
+
+//难度切换
+difficultySel.onchange = ()=>{
+    currentDiff = difficulty[difficultySel.value];
+    initGame();
+}
+
+restartBtn.onclick = initGame;
+initGame();
+</script>
+</body>
+</html>
